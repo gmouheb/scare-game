@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Match the Cards</title>
+<style>
+  :root { --bg:#1d2333; --card:#3b4a6b; --front:#f4f1e8; --accent:#7fd1b9; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--bg); color: #fff;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 16px; user-select: none;
+  }
+  h1 { margin: 0 0 6px; font-size: 1.8rem; }
+  #status { margin-bottom: 16px; opacity: .8; }
+  #board {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+    width: min(92vw, 420px);
+  }
+  .card {
+    aspect-ratio: 1; perspective: 600px; cursor: pointer;
+  }
+  .inner {
+    position: relative; width: 100%; height: 100%;
+    transition: transform .35s; transform-style: preserve-3d;
+  }
+  .card.open .inner, .card.done .inner { transform: rotateY(180deg); }
+  .face {
+    position: absolute; inset: 0; border-radius: 10px; backface-visibility: hidden;
+    display: flex; align-items: center; justify-content: center; font-size: clamp(1.6rem, 8vw, 2.6rem);
+  }
+  .back { background: var(--card); box-shadow: inset 0 0 0 3px #4d5f87; }
+  .front { background: var(--front); transform: rotateY(180deg); }
+  .card.done .front { box-shadow: inset 0 0 0 4px var(--accent); }
+  button {
+    margin-top: 18px; padding: 10px 20px; border: 0; border-radius: 8px;
+    background: var(--accent); color: #102; font-weight: 600; font-size: 1rem; cursor: pointer;
+  }
+
+  /* Jumpscare */
+  #scare {
+    position: fixed; inset: 0; z-index: 99; display: none;
+    align-items: center; justify-content: center; background: #000; overflow: hidden;
+  }
+  #scare.on { display: flex; animation: flash .12s steps(2) infinite; }
+  #scare svg { width: 100vmin; height: 100vmin; animation: lunge .35s cubic-bezier(.2,1.6,.4,1) forwards, shake .06s linear .35s infinite; }
+  @keyframes flash { 0% { background:#000 } 100% { background:#5a0000 } }
+  @keyframes lunge { from { transform: scale(.05) } to { transform: scale(1.35) } }
+  @keyframes shake {
+    0% { transform: scale(1.35) translate(0,0) rotate(0) }
+    25% { transform: scale(1.38) translate(-12px,8px) rotate(-2deg) }
+    50% { transform: scale(1.33) translate(10px,-10px) rotate(2deg) }
+    75% { transform: scale(1.37) translate(-8px,-6px) rotate(-1deg) }
+    100% { transform: scale(1.35) translate(0,0) rotate(0) }
+  }
+</style>
+</head>
+<body>
+  <h1>Match the Cards</h1>
+  <div id="status">Find the pairs</div>
+  <div id="board"></div>
+  <button id="restart">Restart</button>
+
+  <div id="scare" aria-hidden="true">
+    <svg viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="skin" cx="50%" cy="40%" r="60%">
+          <stop offset="0%" stop-color="#d8d4c8"/>
+          <stop offset="70%" stop-color="#8b877c"/>
+          <stop offset="100%" stop-color="#2a2722"/>
+        </radialGradient>
+        <radialGradient id="eye" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#ff1a1a"/>
+          <stop offset="25%" stop-color="#600"/>
+          <stop offset="60%" stop-color="#000"/>
+        </radialGradient>
+      </defs>
+      <ellipse cx="200" cy="205" rx="150" ry="185" fill="url(#skin)"/>
+      <!-- cracks -->
+      <path d="M120 70 L140 110 L128 140 M280 60 L262 100 L275 130 M90 230 L120 250" stroke="#3a3530" stroke-width="3" fill="none"/>
+      <!-- brows -->
+      <path d="M95 120 L180 150" stroke="#1a1714" stroke-width="10" stroke-linecap="round"/>
+      <path d="M305 120 L220 150" stroke="#1a1714" stroke-width="10" stroke-linecap="round"/>
+      <!-- eyes -->
+      <ellipse cx="140" cy="175" rx="42" ry="34" fill="url(#eye)"/>
+      <ellipse cx="260" cy="175" rx="42" ry="34" fill="url(#eye)"/>
+      <circle cx="140" cy="175" r="6" fill="#fff"/>
+      <circle cx="260" cy="175" r="6" fill="#fff"/>
+      <!-- nose -->
+      <path d="M190 215 L200 240 L210 215 Z" fill="#1a1714"/>
+      <!-- mouth -->
+      <ellipse cx="200" cy="305" rx="78" ry="62" fill="#120000"/>
+      <path d="M128 280 L142 302 L156 280 L170 304 L184 280 L198 306 L212 280 L226 304 L240 280 L254 302 L268 280" fill="#e8e2cc"/>
+      <path d="M135 335 L150 315 L165 340 L180 316 L195 342 L210 316 L225 340 L240 315 L258 335" fill="#e8e2cc"/>
+      <!-- blood drips -->
+      <path d="M150 340 q4 30 0 45 q-4 -15 0 -45 M245 338 q4 22 0 34 q-4 -12 0 -34" fill="#8a0000"/>
+    </svg>
+  </div>
+
+<script>
+  const SYMBOLS = ['🍎','🌙','⭐','🐙','🎈','🍀','🔔','🦋'];
+  const SCARE_ON_MATCH = 3;
+
+  const board = document.getElementById('board');
+  const status = document.getElementById('status');
+  const scare = document.getElementById('scare');
+  let first = null, lock = false, matches = 0, scared = false;
+  let audioCtx = null;
+
+  function shuffle(a) {
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  function newGame() {
+    board.innerHTML = '';
+    first = null; lock = false; matches = 0; scared = false;
+    status.textContent = 'Find the pairs';
+    shuffle([...SYMBOLS, ...SYMBOLS]).forEach(sym => {
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.dataset.sym = sym;
+      card.innerHTML = `<div class="inner"><div class="face back"></div><div class="face front">${sym}</div></div>`;
+      card.addEventListener('click', () => flip(card));
+      board.appendChild(card);
+    });
+  }
+
+  function flip(card) {
+    // Audio must be unlocked by a user gesture (browser autoplay policy).
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+
+    if (lock || card === first || card.classList.contains('done')) return;
+    card.classList.add('open');
+    if (!first) { first = card; return; }
+
+    if (first.dataset.sym === card.dataset.sym) {
+      first.classList.add('done'); card.classList.add('done');
+      first = null; matches++;
+      status.textContent = `Matches: ${matches} / ${SYMBOLS.length}`;
+      if (matches === SCARE_ON_MATCH && !scared) {
+        scared = true; lock = true;
+        setTimeout(jumpscare, 600);
+      } else if (matches === SYMBOLS.length) {
+        status.textContent = 'You win!';
+      }
+    } else {
+      lock = true;
+      const a = first; first = null;
+      setTimeout(() => { a.classList.remove('open'); card.classList.remove('open'); lock = false; }, 800);
+    }
+  }
+
+  function jumpscare() {
+    scare.classList.add('on');
+    if (navigator.vibrate) navigator.vibrate([300, 100, 300]);
+    scream(2.4);
+    setTimeout(() => { scare.classList.remove('on'); lock = false; }, 2600);
+  }
+
+  // Synthesized scream: detuned sawtooth voices + vibrato + noise, heavily distorted.
+  function scream(dur) {
+    const ctx = audioCtx, t = ctx.currentTime;
+    const master = ctx.createGain();
+    master.gain.setValueAtTime(0.0001, t);
+    master.gain.exponentialRampToValueAtTime(0.8, t + 0.04);
+    master.gain.setValueAtTime(0.8, t + dur - 0.5);
+    master.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+
+    const shaper = ctx.createWaveShaper();
+    const n = 1024, curve = new Float32Array(n), k = 300;
+    for (let i = 0; i < n; i++) { const x = i * 2 / n - 1; curve[i] = (3 + k) * x * 20 * Math.PI / 180 / (Math.PI + k * Math.abs(x)); }
+    shaper.curve = curve;
+    const comp = ctx.createDynamicsCompressor();
+    shaper.connect(master).connect(comp).connect(ctx.destination);
+
+    const lfo = ctx.createOscillator(); lfo.frequency.value = 9;
+    const lfoGain = ctx.createGain(); lfoGain.gain.value = 70;
+    lfo.connect(lfoGain); lfo.start(t); lfo.stop(t + dur);
+
+    [-30, 0, 25, 1200].forEach(detune => {
+      const o = ctx.createOscillator(); o.type = 'sawtooth'; o.detune.value = detune;
+      o.frequency.setValueAtTime(350, t);
+      o.frequency.exponentialRampToValueAtTime(1150, t + 0.25);
+      o.frequency.linearRampToValueAtTime(950, t + dur * 0.7);
+      o.frequency.linearRampToValueAtTime(600, t + dur);
+      lfoGain.connect(o.frequency);
+      const g = ctx.createGain(); g.gain.value = detune === 1200 ? 0.15 : 0.3;
+      o.connect(g).connect(shaper); o.start(t); o.stop(t + dur);
+    });
+
+    const buf = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
+    const d = buf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    const noise = ctx.createBufferSource(); noise.buffer = buf;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2800; bp.Q.value = 1.5;
+    const ng = ctx.createGain(); ng.gain.value = 0.5;
+    noise.connect(bp).connect(ng).connect(shaper); noise.start(t);
+  }
+
+  document.getElementById('restart').addEventListener('click', newGame);
+  newGame();
+</script>
+</body>
+</html>
